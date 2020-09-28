@@ -11,6 +11,8 @@ import collections
 from urx import urrtmon
 from urx import ursecmon
 
+
+
 __author__ = "Olivier Roulet-Dubonnet"
 __copyright__ = "Copyright 2011-2015, Sintef Raufoss Manufacturing"
 __license__ = "LGPLv3"
@@ -84,8 +86,9 @@ class URRobot(object):
         program is interrupted
         """
         self.logger.info("Sending program: " + prog)
+        
         self.secmon.send_program(prog)
-
+       
     def get_tcp_force(self, wait=True):
         """
         return measured force in TCP
@@ -252,19 +255,38 @@ class URRobot(object):
             dist += (target[i] - joints[i]) ** 2
         return dist ** 0.5
 
-    def getj(self, wait=False):
+    def getj(self, wait=False, getv = False):
         """
         get joints position
         """
         jts = self.secmon.get_joint_data(wait)
-        return [jts["q_actual0"], jts["q_actual1"], jts["q_actual2"], jts["q_actual3"], jts["q_actual4"], jts["q_actual5"]]
+        jp = [jts["q_actual0"], jts["q_actual1"], jts["q_actual2"], jts["q_actual3"], jts["q_actual4"], jts["q_actual5"]]
+        jv = [jts["qd_actual0"], jts["qd_actual1"], jts["qd_actual2"], jts["qd_actual3"], jts["qd_actual4"], jts["qd_actual5"]]
+        if getv is True:
+            return (jp, jv)
+        else:
+            return jp
+
+
+    def send_custom_program(self, prog):
+        """
+        send a complete program using urscript to the robot
+        the program is executed immediatly and any runnning
+        program is interrupted
+        """
+        self.logger.info("Sending program: " + prog)
+        self.rtmon.send_program(prog)
+
 
     def speedx(self, command, velocities, acc, min_time):
         vels = [round(i, self.max_float_length) for i in velocities]
         vels.append(acc)
         vels.append(min_time)
-        prog = "{}([{},{},{},{},{},{}], a={}, t_min={})".format(command, *vels)
-        self.send_program(prog)
+        prog = "{}([{},{},{},{},{},{}], a={}, t={})".format(command, *vels)
+        # prog = "{}([{},{},{},{},{},{}],{},{})".format(command, *vels)
+        # self.send_program(prog)
+        self.send_custom_program(prog)
+    
 
     def movej(self, joints, acc=0.1, vel=0.05, wait=True, relative=False, threshold=None):
         """

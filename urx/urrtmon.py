@@ -10,6 +10,7 @@ import struct
 import time
 import threading
 from copy import deepcopy
+from urx.ursecmon import Program
 
 import numpy as np
 
@@ -55,6 +56,9 @@ class URRTMonitor(threading.Thread):
         self._buffer = []
         self._csys = None
         self._csys_lock = threading.Lock()
+        self._prog_queue = []
+        self._prog_queue_lock = threading.Lock()
+
 
     def set_csys(self, csys):
         with self._csys_lock:
@@ -178,6 +182,7 @@ class URRTMonitor(threading.Thread):
             self._qTarget = np.array(unp[1:7])
             self._tcp_force = np.array(unp[67:73])
             self._tcp = np.array(unp[73:79])
+            self._tcp_speed = np.array(unp[61:67])
 
             if self._csys:
                 with self._csys_lock:
@@ -194,6 +199,30 @@ class URRTMonitor(threading.Thread):
 
         with self._dataEvent:
             self._dataEvent.notifyAll()
+
+    def __send_rt_data(self):
+        with self._prog_queue_lock:
+            while len(self._prog_queue) > 0:
+                data = self._prog_queue.pop()
+                self._rtSock.send(data.program)
+                with data.condition:
+                    data.condition.notify_all()
+
+    def send_program(self, prog):
+        """
+        send program to robot in URRobot format
+        If another program is send while a program is running the first program is aborded.
+        """
+        prog.strip()
+        if not isinstance(prog, bytes):
+            prog = prog.encode()
+        data = Program(prog + b"\n")
+
+        with data.condition:
+            with self._prog_queue_lock:
+                self._prog_queue.append(data)
+            data.condition.wait()
+
 
     def start_buffering(self):
         """
@@ -245,7 +274,8 @@ class URRTMonitor(threading.Thread):
                 qActual=self._qActual,
                 qTarget=self._qTarget,
                 tcp=self._tcp,
-                tcp_force=self._tcp_force)
+                tcp_force=self._tcp_force,
+                tcp_speed=self._tcp_speed)
 
     def stop(self):
         # print(self.__class__.__name__+': Stopping')
@@ -260,4 +290,5 @@ class URRTMonitor(threading.Thread):
         self._rtSock.connect((self._urHost, 30003))
         while not self._stop_event:
             self.__recv_rt_data()
+            self.__send_rt_data()
         self._rtSock.close()
